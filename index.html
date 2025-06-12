@@ -8,58 +8,32 @@
     body { font-family: sans-serif; margin: 0; padding: 0; }
     header, footer { background: #f0f0f0; padding: 1rem; text-align: center; }
     main { padding: 1rem; }
-    #project-form, #task-form { margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }
-    #timeline-container {
-      border: 1px solid #ccc;
-      overflow-x: auto;
-      margin-top: 1rem;
-      width: 100%;
-      height: 60vh;
-    }
+    #project-form, #task-form, #delete-controls { margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }
+    #timeline-container { border: 1px solid #ccc; overflow-x: auto; margin-top: 1rem; width: 100%; height: 60vh; }
     .project-row { display: flex; align-items: flex-start; margin-top: 1rem; }
-    .project-label { width: 150px; padding: 0.5rem; font-weight: bold; background: #e0e0e0; }
+    .project-label { width: 150px; padding: 0.5rem; font-weight: bold; background: #e0e0e0; cursor: pointer; }
+    .project-label.selected { background: #d06060; color: white; }
     .timeline { position: relative; flex: 1; }
     .grid-line { position: absolute; top: 0; bottom: 0; width: 1px; background: #e0e0e0; }
     .week-label { position: absolute; top: 0; font-size: 0.75rem; transform: translateX(-50%); }
-    .task {
-      position: absolute;
-      height: 30px;
-      line-height: 30px;
-      color: #fff;
-      padding: 0 4px;
-      border: 1px solid #fff;
-      border-radius: 4px;
-      cursor: grab;
-      user-select: none;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      background-clip: padding-box;
-      z-index: 1;
-    }
+    .task { position: absolute; height: 30px; line-height: 30px; color: #fff; padding: 0 4px; border: 1px solid #fff; border-radius: 4px; cursor: grab; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background-clip: padding-box; z-index: 1; }
     .task.dragging { opacity: 0.7; cursor: grabbing; z-index: 2; }
-    .handle {
-      position: absolute;
-      top: 0;
-      width: 6px;
-      height: 100%;
-      background: rgba(255, 255, 255, 0.8);
-      cursor: ew-resize;
-    }
-    .handle.left { left: 0; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
-    .handle.right { right: 0; border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
-    #popup { position: absolute; background: #fff; border: 1px solid #ccc; padding: 1rem;
-             box-shadow: 0 2px 8px rgba(0,0,0,0.2); display: none; z-index: 10; }
-    #popup textarea { width: 200px; height: 80px; }
-    #popup .field { margin-bottom: 0.5rem; }
+    .task.selected { outline: 2px solid #d06060; }
+    .handle { position: absolute; top: 0; width: 6px; height: 100%; background: rgba(255,255,255,0.8); cursor: ew-resize; }
+    .handle.left { left: 0; border-radius: 4px 0 0 4px; }
+    .handle.right { right: 0; border-radius: 0 4px 4px 0; }
+    #popup { position: absolute; background: #fff; border:1px solid #ccc; padding:1rem; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:none; z-index:10; }
+    #popup textarea { width:200px; height:80px; }
+    #popup .field { margin-bottom:0.5rem; }
+    #popup button { margin-right: 0.5rem; }
   </style>
 </head>
 <body>
-  <header><h1>Interaktiv tidslinje med projekt</h1></header>
+  <header><h1>Interaktivt GANTT-schema för projekt</h1></header>
   <main>
     <div id="project-form">
       <input type="text" id="project-name" placeholder="Nytt projektnamn" />
-      <button id="add-project">Skapa projekt</button>
+      <button type="button" id="add-project">Skapa projekt</button>
     </div>
     <div id="task-form">
       <input list="preset-tasks" id="task-name" placeholder="Moment namn" />
@@ -84,7 +58,10 @@
       <input type="date" id="task-start" value="2025-01-01" />
       <input type="date" id="task-end" value="2025-01-02" />
       <select id="project-select"></select>
-      <button id="add-task">Lägg till moment</button>
+      <button type="button" id="add-task">Lägg till moment</button>
+    </div>
+    <div id="delete-controls">
+      <button type="button" id="delete-selected" disabled>Ta bort markerat</button>
     </div>
     <div id="timeline-container"></div>
     <div id="popup">
@@ -93,185 +70,162 @@
       <div class="field"><strong>Slut:</strong> <span id="popup-end"></span></div>
       <div class="field"><strong>Kommentar:</strong></div>
       <textarea id="comment-text"></textarea><br />
-      <button id="save-comment">Spara</button>
-      <button id="close-popup">Stäng</button>
+      <button type="button" id="save-comment">Spara</button>
+      <button type="button" id="delete-moment">Ta bort moment</button>
+      <button type="button" id="close-popup">Stäng</button>
     </div>
   </main>
-  <footer><p>&copy; 2025 Mitt Namn</p></footer>
+  <footer><p>&copy; 2025 Albin Belmén</p></footer>
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const startDate = new Date('2025-01-01');
-      const endDate   = new Date('2025-12-31');
-      const totalDays = Math.ceil((endDate - startDate)/(1000*60*60*24)) + 1;
-      const dayPx     = 100/7; // ~14.2857px per dag
-      const projects  = [];
-      const colors    = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf'];
-      const popup     = document.getElementById('popup');
-      let activeTask  = null;
+    const projects = [];
+    let activeTask = null;
+    let selectedProject = null;
+    let selectedTask = null;
+    const startDate = new Date('2025-01-01');
+    const endDate   = new Date('2025-12-31');
+    const totalDays = Math.ceil((endDate - startDate)/(1000*60*60*24)) + 1;
+    const dayPx     = 100/7;
 
-      function daysToPx(d){ return d * dayPx; }
-      function formatDate(d){ return d.toISOString().slice(0,10); }
-      function daysSince(d){ const dt = new Date(d); return isNaN(dt) ? 0 : Math.round((dt - startDate)/(1000*60*60*24)); }
+    function daysSince(date) {
+      const d = new Date(date);
+      return isNaN(d) ? 0 : Math.round((d - startDate)/(1000*60*60*24));
+    }
+    function daysToPx(d) { return d * dayPx; }
+    function fmtDate(d) { return d.toISOString().slice(0,10); }
 
-      const projectSelect = document.getElementById('project-select');
-      document.getElementById('add-project').addEventListener('click', () => {
-        const name = document.getElementById('project-name').value.trim(); if(!name) return;
-        const id = Date.now().toString(); projects.push({id,name,tasks:[]}); updateOptions(); render();
-      });
-      function updateOptions(){ projectSelect.innerHTML=''; projects.forEach(p=>{ const o=document.createElement('option');o.value=p.id;o.textContent=p.name; projectSelect.appendChild(o); }); }
-
-      document.getElementById('add-task').addEventListener('click', () => {
-        const name  = document.getElementById('task-name').value.trim();
-        const start = document.getElementById('task-start').value;
-        const end   = document.getElementById('task-end').value;
-        const pid   = projectSelect.value;
-        if(!name||!start||!end||!pid) return;
-        const project = projects.find(p=>p.id===pid);
-        project.tasks.push({ id:Date.now().toString(), name, start, end,
-          color: colors[project.tasks.length % colors.length], comment:'', lane:0
-        });
-        // auto next
-        const nx = new Date(end); nx.setDate(nx.getDate()+1); const v= formatDate(nx);
-        document.getElementById('task-start').value=v; document.getElementById('task-end').value=v;
-        document.getElementById('task-name').value=''; render();
-      });
-
-      function render(){
-        const container = document.getElementById('timeline-container'); container.innerHTML='';
-        projects.forEach(proj=>{
-          const row=document.createElement('div'); row.className='project-row';
-          const lbl=document.createElement('div'); lbl.className='project-label'; lbl.textContent=proj.name;
-          const tl = document.createElement('div'); tl.className='timeline'; tl.dataset.proj=proj.id;
-          row.append(lbl,tl); container.appendChild(row); drawGrid(tl,proj);
-        });
-      }
-
-      function drawGrid(tl,proj){
-        tl.innerHTML=''; const lanes=[];
-        proj.tasks.sort((a,b)=>new Date(a.start)-new Date(b.start)).forEach(t=>{
-          const sd=daysSince(t.start), ed=daysSince(t.end)+1;
-          let ln=lanes.findIndex(end=>sd>=end);
-          if(ln<0){ ln=lanes.length; lanes.push(ed); } else lanes[ln]=ed;
-          t.lane=ln;
-        });
-        tl.style.height=(20+lanes.length*35)+'px'; tl.style.width=daysToPx(totalDays)+'px';
-        const weeks=Math.ceil(totalDays/7);
-        for(let w=0;w<weeks;w++){ const x=daysToPx(w*7);
-          const line=document.createElement('div'); line.className='grid-line'; line.style.left=x+'px'; tl.appendChild(line);
-          const week=document.createElement('div'); week.className='week-label'; week.style.left=x+'px'; week.textContent='v'+(w+1); tl.appendChild(week);
-        }
-        proj.tasks.forEach(t=>renderTask(tl,t));
-      }
-
-      function renderTask(tl,t){
-        let el=tl.querySelector(`[data-id='${t.id}']`);
-        if(!el){
-          el=document.createElement('div'); el.className='task'; el.dataset.id=t.id; el.style.background=t.color;
-          // drag
-          el.addEventListener('mousedown', startDrag);
-          // resize handles
-          ['left','right'].forEach(side=>{
-            const h=document.createElement('div'); h.className='handle '+side; el.appendChild(h);
-            h.addEventListener('mousedown', e=>startResize(e,t,side));
-          });
-          // popup double-click
-          el.addEventListener('mouseup', e=>{ if(e.detail===2) openPopup(t,el); });
-          tl.appendChild(el);
-        }
-        const sd=daysSince(t.start), ed=daysSince(t.end)+1;
-        el.style.top = (20 + t.lane*35)+'px';
-        el.style.left= daysToPx(sd)+'px';
-        el.style.width= daysToPx(ed-sd)+'px';
-        el.textContent = t.name;
-      }
-
-      let drag={}, resize={};
-      function startDrag(e){ if(e.target.classList.contains('handle')) return;
-        const el=e.currentTarget; drag={ el, startX:e.clientX, origLeft:parseFloat(el.style.left)||0 };
-        const pid=el.closest('.timeline').dataset.proj;
-        const proj=projects.find(p=>p.id===pid);
-        drag.task=proj.tasks.find(x=>x.id===el.dataset.id);
-        el.classList.add('dragging');
-        document.addEventListener('mousemove', onDrag);
-        document.addEventListener('mouseup', endDrag);
-      }
-      function onDrag(e){ if(!drag.el) return; const dx=e.clientX-drag.startX; drag.el.style.left = Math.max(0, drag.origLeft+dx)+'px'; }
-      function endDrag(){ if(!drag.el) return;
-        const nl=parseFloat(drag.el.style.left);
-        const delta=Math.round(nl/dayPx)-Math.round(drag.origLeft/dayPx);
-        const s=new Date(drag.task.start), ed=new Date(drag.task.end);
-        s.setDate(s.getDate()+delta); ed.setDate(ed.getDate()+delta);
-        drag.task.start=formatDate(s); drag.task.end=formatDate(ed);
-        if(popup.style.display==='block' && activeTask===drag.task) {
-          document.getElementById('popup-start').textContent=drag.task.start;
-          document.getElementById('popup-end').textContent=drag.task.end;
-        }
-        drag.el.classList.remove('dragging');
-        document.removeEventListener('mousemove', onDrag);
-        document.removeEventListener('mouseup', endDrag);
-        render();
-      }
-
-      function startResize(e,task,side){ e.preventDefault(); e.stopPropagation();
-        resize={ task, side, startX:e.clientX,
-          origStart:daysSince(task.start), origEnd:daysSince(task.end)
-        };
-        document.addEventListener('mousemove', onResize);
-        document.addEventListener('mouseup', endResize);
-      }
-      function onResize(e) {
-        if (!resize.task) return;
-        const dx = e.clientX - resize.startX;
-        const dayDelta = Math.round(dx / dayPx);
-        let ns = resize.origStart;
-        let ne = resize.origEnd;
-        if (resize.side === 'right') {
-          ne = Math.max(ns + 1, resize.origEnd + dayDelta);
-        } else {
-          ns = Math.min(ne - 1, Math.max(0, resize.origStart + dayDelta));
-        }
-        // update task dates
-        const sd = new Date(startDate.getTime() + ns * 24 * 60 * 60 * 1000);
-        const ed = new Date(startDate.getTime() + ne * 24 * 60 * 60 * 1000);
-        if (!isNaN(sd) && !isNaN(ed)) {
-          resize.task.start = formatDate(sd);
-          resize.task.end = formatDate(ed);
-          // update DOM element directly
-          const el = document.querySelector(`.task[data-id='${resize.task.id}']`);
-          if (el) {
-            el.style.left = daysToPx(ns) + 'px';
-            el.style.width = daysToPx(ne - ns) + 'px';
-          }
-          // update popup if open
-          if (popup.style.display === 'block' && activeTask === resize.task) {
-            document.getElementById('popup-start').textContent = resize.task.start;
-            document.getElementById('popup-end').textContent = resize.task.end;
-          }
-        }
-      }
-      function endResize(){ document.removeEventListener('mousemove', onResize);
-        document.removeEventListener('mouseup', endResize);
-        resize={}; }
-
-      function openPopup(t,el){
-        activeTask=t;
-        const r=el.getBoundingClientRect();
-        popup.style.top = r.bottom+window.scrollY+'px';
-        popup.style.left= r.left+window.scrollX+'px';
-        document.getElementById('popup-name').textContent=t.name;
-        document.getElementById('popup-start').textContent=t.start;
-        document.getElementById('popup-end').textContent=t.end;
-        document.getElementById('comment-text').value=t.comment;
-        popup.style.display='block';
-      }
-      document.getElementById('save-comment').addEventListener('click', ()=>{
-        activeTask.comment=document.getElementById('comment-text').value;
-        popup.style.display='none'; render();
-      });
-      document.getElementById('close-popup').addEventListener('click', ()=>{ popup.style.display='none'; });
-
+    function addProject() {
+      const name = document.getElementById('project-name').value.trim();
+      if (!name) { alert('Ange ett projektnamn.'); return; }
+      const id = Date.now().toString();
+      projects.push({ id, name, tasks: [] });
+      updateProjectSelect();
       render();
-    });
+    }
+
+    function updateProjectSelect() {
+      const sel = document.getElementById('project-select');
+      sel.innerHTML = '';
+      projects.forEach(p => {
+        const o = document.createElement('option'); o.value = p.id; o.textContent = p.name;
+        sel.appendChild(o);
+      });
+    }
+
+    function addTask() {
+      const name  = document.getElementById('task-name').value.trim();
+      const start = document.getElementById('task-start').value;
+      const end   = document.getElementById('task-end').value;
+      const pid   = document.getElementById('project-select').value;
+      if (!name || !start || !end || !pid) { alert('Fyll i alla fält'); return; }
+      const proj = projects.find(p => p.id === pid);
+      proj.tasks.push({ id:Date.now().toString(), name, start, end, color:'#1f77b4', comment:'', lane:0 });
+      const nx = new Date(end); nx.setDate(nx.getDate()+1);
+      document.getElementById('task-start').value = fmtDate(nx);
+      document.getElementById('task-end').value   = fmtDate(nx);
+      document.getElementById('task-name').value  = '';
+      render();
+    }
+
+    function deleteSelected() {
+      if (selectedTask) {
+        for (const proj of projects) {
+          const idx = proj.tasks.findIndex(t=>t.id===selectedTask);
+          if (idx>-1) { proj.tasks.splice(idx,1); break; }
+        }
+      } else if (selectedProject) {
+        const idx = projects.findIndex(p=>p.id===selectedProject);
+        if (idx>-1) projects.splice(idx,1);
+      }
+      selectedTask = null; selectedProject = null;
+      render();
+    }
+
+    function deleteMoment() {
+      if (!activeTask) return;
+      for (const proj of projects) {
+        const idx = proj.tasks.findIndex(t=>t.id===activeTask.id);
+        if (idx>-1) { proj.tasks.splice(idx,1); break; }
+      }
+      activeTask = null; popup.style.display='none'; render();
+    }
+
+    function saveComment() {
+      if (!activeTask) return;
+      activeTask.comment = document.getElementById('comment-text').value;
+      popup.style.display='none'; render();
+    }
+
+    function render() {
+      const container = document.getElementById('timeline-container');
+      container.innerHTML = '';
+      projects.forEach(proj => {
+        const row = document.createElement('div'); row.className='project-row';
+        const lbl = document.createElement('div'); lbl.className='project-label'; lbl.textContent=proj.name;
+        lbl.classList.toggle('selected', proj.id===selectedProject);
+        lbl.onclick = () => { selectedProject=proj.id; selectedTask=null; render(); };
+        const tl  = document.createElement('div'); tl.className='timeline'; tl.dataset.proj=proj.id;
+        row.append(lbl,tl); container.appendChild(row);
+        drawGrid(tl,proj);
+      });
+      document.getElementById('delete-selected').disabled = !selectedTask && !selectedProject;
+    }
+
+    function drawGrid(tl,proj) {
+      tl.innerHTML=''; const lanes=[];
+      proj.tasks.sort((a,b)=>new Date(a.start)-new Date(b.start)).forEach(t=>{
+        const sd=daysSince(t.start), ed=daysSince(t.end)+1;
+        let ln=lanes.findIndex(e=>sd>=e);
+        if (ln<0) { lanes.push(ed); ln=lanes.length-1; } else lanes[ln]=ed;
+        t.lane=ln;
+      });
+      tl.style.height = (20 + lanes.length*35) + 'px';
+      tl.style.width  = daysToPx(totalDays) + 'px';
+      const weeks = Math.ceil(totalDays/7);
+      for(let w=0;w<weeks;w++){ const x=daysToPx(w*7);
+        const line = document.createElement('div'); line.className='grid-line'; line.style.left=x+'px'; tl.appendChild(line);
+        const wk   = document.createElement('div'); wk.className='week-label'; wk.style.left=x+'px'; wk.textContent='v'+(w+1); tl.appendChild(wk);
+      }
+      proj.tasks.forEach(t=>renderTask(tl,t));
+    }
+
+    function renderTask(tl,t) {
+      let el = tl.querySelector(`[data-id='${t.id}']`);
+      if (!el) {
+        el = document.createElement('div'); el.className='task'; el.dataset.id=t.id; el.style.background=t.color;
+        el.addEventListener('mousedown', startDrag);
+        ['left','right'].forEach(side=>{
+          const h=document.createElement('div'); h.className='handle '+side; el.appendChild(h);
+          h.addEventListener('mousedown', e=>startResize(e,t,side));
+        });
+        el.addEventListener('mouseup', e=>{ if(e.detail===2) openPopup(t,el); });
+        el.addEventListener('click', () => { selectedTask=t.id; selectedProject=null; render(); });
+        tl.appendChild(el);
+      }
+      const sd=daysSince(t.start), ed=daysSince(t.end)+1;
+      el.style.top   = (20 + t.lane*35) + 'px';
+      el.style.left  = daysToPx(sd) + 'px';
+      el.style.width = daysToPx(ed-sd) + 'px';
+      el.textContent = t.name;
+      el.classList.toggle('selected', t.id===selectedTask);
+    }
+
+    let drag={}, resize={}, popup=document.getElementById('popup');
+    function startDrag(e){ if(e.target.classList.contains('handle')) return; const el=e.currentTarget; drag={el,startX:e.clientX,origLeft:parseFloat(el.style.left)||0}; const pid=el.closest('.timeline').dataset.proj; drag.task=projects.find(p=>p.id===pid).tasks.find(x=>x.id===el.dataset.id); el.classList.add('dragging'); document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', endDrag); }
+    function onDrag(e){ if(!drag.el)return; drag.el.style.left=Math.max(0,drag.origLeft+e.clientX-drag.startX)+'px'; }
+    function endDrag(){ if(!drag.el)return; const nl=parseFloat(drag.el.style.left); const delta=Math.round(nl/dayPx)-Math.round(drag.origLeft/dayPx); const s=new Date(drag.task.start), ed=new Date(drag.task.end); s.setDate(s.getDate()+delta); ed.setDate(ed.getDate()+delta); drag.task.start=fmtDate(s); drag.task.end=fmtDate(ed); if(popup.style.display==='block'&&activeTask===drag.task){ document.getElementById('popup-start').textContent=drag.task.start; document.getElementById('popup-end').textContent=drag.task.end; } drag.el.classList.remove('dragging'); document.removeEventListener('mousemove', onDrag); document.removeEventListener('mouseup', endDrag); render(); }
+    function startResize(e,task,side){ e.preventDefault(); e.stopPropagation(); resize={task,side,startX:e.clientX,origStart:daysSince(task.start),origEnd:daysSince(task.end)}; document.addEventListener('mousemove', onResize); document.addEventListener('mouseup', endResize); }
+    function onResize(e){ if(!resize.task)return; const dx=Math.round((e.clientX-resize.startX)/dayPx); let ns=resize.origStart, ne=resize.origEnd; if(resize.side==='right') ne=Math.max(ns+1,resize.origEnd+dx); else ns=Math.min(ne-1,Math.max(0,resize.origStart+dx)); const sd=new Date(startDate.getTime()+ns*86400000), ed=new Date(startDate.getTime()+ne*86400000); if(!isNaN(sd)&&!isNaN(ed)){ resize.task.start=fmtDate(sd); resize.task.end=fmtDate(ed); const el=document.querySelector(`.task[data-id='${resize.task.id}']`); if(el){ el.style.left=daysToPx(ns)+'px'; el.style.width=daysToPx(ne-ns)+'px'; } if(popup.style.display==='block'&&activeTask===resize.task){ document.getElementById('popup-start').textContent=resize.task.start; document.getElementById('popup-end').textContent=resize.task.end; } } }
+    function endResize(){ document.removeEventListener('mousemove', onResize); document.removeEventListener('mouseup', endResize); resize={}; }
+    function openPopup(t,el){ activeTask=t; const r=el.getBoundingClientRect(); popup.style.top=r.bottom+window.scrollY+'px'; popup.style.left=r.left+window.scrollX+'px'; document.getElementById('popup-name').textContent=t.name; document.getElementById('popup-start').textContent=t.start; document.getElementById('popup-end').textContent=t.end; document.getElementById('comment-text').value=t.comment; popup.style.display='block'; }
+    document.getElementById('add-project').addEventListener('click', addProject);
+    document.getElementById('add-task').addEventListener('click', addTask);
+    document.getElementById('delete-selected').addEventListener('click', deleteSelected);
+    document.getElementById('save-comment').addEventListener('click', saveComment);
+    document.getElementById('delete-moment').addEventListener('click', deleteMoment);
+    document.getElementById('close-popup').addEventListener('click', () => popup.style.display='none');
+
+    // Initial render
+    updateProjectSelect(); render();
   </script>
 </body>
 </html>
